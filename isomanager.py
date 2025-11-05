@@ -114,10 +114,6 @@ def backup_all():
     shell.close()
     pe.close()
 
-    cleanup_old_backups()
-    log("[✅] Backup process complete for PE, EOR1, and SPINE.")
-    log("-" * 50)
-
 schedule.every(1).minutes.do(backup_all)
 
 # Infinite loop to keep the script running
