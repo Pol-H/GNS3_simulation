@@ -2,7 +2,7 @@ import paramiko
 import time
 import schedule
 
-# ====== Force legacy SSH algorithms for old Cisco IOS ======
+#Force legacy SSH algorithms for old Cisco IOS
 paramiko.Transport._preferred_kex = (
     'diffie-hellman-group1-sha1',
     'diffie-hellman-group14-sha1'
@@ -17,7 +17,7 @@ paramiko.Transport._preferred_macs = (
     'hmac-md5'
 )
 
-# ====== FUNCTION: Get Cisco running config ======
+#Get Cisco running config
 def get_cisco_config(shell, enable_password):
     """Retrieve the running config from the current router session"""
     shell.send("enable\n")
@@ -32,8 +32,7 @@ def get_cisco_config(shell, enable_password):
         output += shell.recv(4096).decode(errors="ignore")
     return output
 
-
-# ====== FUNCTION: Upload config to SFTP ======
+#Upload config to SFTP
 def upload_to_sftp(server, username, password, local_path, remote_path):
     """Upload config file to SFTP server"""
     try:
@@ -42,30 +41,29 @@ def upload_to_sftp(server, username, password, local_path, remote_path):
         sftp = paramiko.SFTPClient.from_transport(transport)
         sftp.put(local_path, remote_path)
         sftp.close()
-        print(f"✅ Uploaded {local_path} to {server}:{remote_path}")
+        print(f"Uploaded {local_path} to {server}:{remote_path}")
     except Exception as e:
-        print(f"❌ SFTP upload failed: {e}")
+        print(f"SFTP upload failed: {e}")
 
-
-# ====== MAIN BACKUP CHAIN ======
+# Main Code
 def backup_chain():
     """SSH chain: VM → PE → EOR1 → SPINE"""
     try:
-        # --- 1️⃣ Connect to PE (First hop) ---
-        print("🔹 Connecting to PE (192.168.122.147)...")
+        #Connect to First PE
+        print("Connecting to PE (192.168.122.147)...")
         ssh_pe = paramiko.SSHClient()
         ssh_pe.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh_pe.connect("192.168.122.147", username="admin", password="cisco", timeout=10)
         shell_pe = ssh_pe.invoke_shell()
 
-        # === Get PE config ===
+        #Get PE config
         pe_config = get_cisco_config(shell_pe, "cisco")
         with open("running_config_PE.txt", "w") as f:
             f.write(pe_config)
-        print("✅ PE configuration saved")
+        print("PE configuration saved")
 
-        # --- 2️⃣ From PE → EOR1 ---
-        print("🔹 Connecting from PE → EOR1 (10.0.0.2)...")
+        #From PE → EOR1
+        print("Connecting from PE → EOR1 (10.0.0.2)...")
         shell_pe.send("ssh -l admin 10.0.0.2\n")
         time.sleep(2)
         shell_pe.send("cisco\n")  # password
@@ -74,10 +72,10 @@ def backup_chain():
         eor1_config = get_cisco_config(shell_pe, "cisco")
         with open("running_config_EOR1.txt", "w") as f:
             f.write(eor1_config)
-        print("✅ EOR1 configuration saved")
+        print("EOR1 configuration saved")
 
-        # --- 3️⃣ From EOR1 → SPINE ---
-        print("🔹 Connecting from EOR1 → SPINE (10.0.1.2)...")
+        #EOR1 → SPINE
+        print("Connecting from EOR1 → SPINE (10.0.1.2)...")
         shell_pe.send("ssh -l admin 10.0.1.2\n")
         time.sleep(2)
         shell_pe.send("cisco\n")
@@ -86,31 +84,26 @@ def backup_chain():
         spine_config = get_cisco_config(shell_pe, "cisco")
         with open("running_config_SPINE.txt", "w") as f:
             f.write(spine_config)
-        print("✅ SPINE configuration saved")
+        print("SPINE configuration saved")
 
-        # --- 4️⃣ Close SSH session to PE ---
+        #Close SSH session to PE
         ssh_pe.close()
 
-        # --- 5️⃣ Upload all to SFTP ---
+        #Upload all to SFTP
         sftp_server = "192.168.37.128"
         sftp_user = "gns3"
         sftp_pass = "gns3"
-
         upload_to_sftp(sftp_server, sftp_user, sftp_pass,
                        "running_config_PE.txt", "/home/gns3/remote_backups/running_config_PE.txt")
         upload_to_sftp(sftp_server, sftp_user, sftp_pass,
                        "running_config_EOR1.txt", "/home/gns3/remote_backups/running_config_EOR1.txt")
         upload_to_sftp(sftp_server, sftp_user, sftp_pass,
                        "running_config_SPINE.txt", "/home/gns3/remote_backups/running_config_SPINE.txt")
-
     except Exception as e:
-        print(f"❌ Error in backup_chain: {e}")
+        print(f"Error in backup_chain: {e}")
 
-
-# ====== SCHEDULER ======
+#SCHEDULE
 schedule.every(1).minutes.do(backup_chain)
-
-print("🕒 Running scheduled Cisco backup every 1 minute...")
 while True:
     schedule.run_pending()
     time.sleep(1)
